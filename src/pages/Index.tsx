@@ -5,7 +5,6 @@ import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { Github, Linkedin, Twitter } from 'lucide-react';
 import { WorkStatus } from '../utils/markdown';
-import ChatWidget from '../components/ChatWidget';
 
 const Index = () => {
   // Set status manually since useStatus hook has issues
@@ -68,7 +67,6 @@ const Index = () => {
           </div>
         </div>
       </div>
-      <ChatWidget />
     </>
   );
 };

@@ -28,7 +28,7 @@ jobs:
 
       - name: Build
         env:
-          VITE_WEBHOOK_URL: ${{ secrets.VITE_WEBHOOK_URL }}
+          VITE_LAMBDA_URL: ${{ secrets.VITE_LAMBDA_URL }}
           VITE_ENV: production
         run: npm run build
 
