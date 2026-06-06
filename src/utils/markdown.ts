@@ -28,7 +28,7 @@ export interface Skill {
   proficiency: number;
 }
 
-export type WorkStatus = 'Open to Work' | 'Currently Employed' | 'Currently Not Available';
+export type WorkStatus = 'Open to Work' | 'Currently Employed';
 
 const splitSections = (text: string) => {
   const parts = text.split(/\n##\s+/).map(p => p.trim()).filter(Boolean);
@@ -58,7 +58,6 @@ const parseExperienceText = (text: string): Experience[] => {
       const trimmed = origLine.trim();
       if (!trimmed) continue;
 
-      // Detect Section Changes
       if (trimmed.toLowerCase().includes('responsibilities:')) {
         activeMode = 'resp';
         continue;
@@ -68,11 +67,8 @@ const parseExperienceText = (text: string): Experience[] => {
         continue;
       }
 
-      // Check for structural metadata keys
       const kv = trimmed.match(/^[-*]?\s*([^:]+):\s*(.*)$/);
-      if (kv && !origLine.startsWith(' ') && !origLine.startsWith('\t') && !['company', 'period', 'location'].includes(kv[1].trim().toLowerCase())) {
-        // If it looks like a key but isn't metadata, don't clear mode yet
-      } else if (kv && !origLine.startsWith(' ') && !origLine.startsWith('\t')) {
+      if (kv && !origLine.startsWith(' ') && !origLine.startsWith('\t')) {
         const key = kv[1].trim().toLowerCase();
         const val = kv[2].trim();
         if (key === 'company') item.company = val;
@@ -82,7 +78,6 @@ const parseExperienceText = (text: string): Experience[] => {
         continue;
       }
 
-      // Capture list items based on current active collection mode
       const bulletMatch = trimmed.match(/^[-*+]\s+(.*)$/) || [null, trimmed];
       const content = bulletMatch[1]?.trim();
       
@@ -194,12 +189,7 @@ const parseSkillsText = (text: string): Skill[] => {
 const parseStatusText = (text: string): WorkStatus => {
   const m = text.match(/status:\s*(.*)/i);
   if (!m) return 'Currently Employed';
-
-  const value = m[1].trim();
-  if (/open/i.test(value)) return 'Open to Work';
-  if (/not\s+available/i.test(value)) return 'Currently Not Available';
-
-  return 'Currently Employed';
+  return /open/i.test(m[1].trim()) ? 'Open to Work' : 'Currently Employed';
 };
 
 export const useProjects = () => {
