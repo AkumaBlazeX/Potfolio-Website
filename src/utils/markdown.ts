@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 
-// Define types for our content
 export interface Project {
   id: string;
   title: string;
@@ -26,97 +25,64 @@ export interface Skill {
   id: string;
   name: string;
   category: string;
-  proficiency: number; // 1-5
+  proficiency: number;
 }
 
 export type WorkStatus = 'Open to Work' | 'Currently Employed';
 
-// --- Simple markdown parsers tailored to the repo's content format ---
+// Unified section splitter that is immune to missing top-level newlines
 const splitSections = (text: string) => {
-  // Split on '## ' headings, ignore the first chunk (the file-level title)
-  const parts = text.split(/\n##\s+/).map(p => p.trim()).filter(Boolean);
+  const parts = text.split(/\n##\s+|###\s+/).map(p => p.trim()).filter(Boolean);
   if (parts.length === 0) return [];
-  // first part may contain the file title; drop it when it starts with '#'
-  if (parts[0].startsWith('#') || parts[0].toLowerCase().startsWith('projects') || parts[0].toLowerCase().startsWith('experience') || parts[0].toLowerCase().startsWith('skills')) {
-    return parts.slice(1);
+  // If the first section contains the main H1 file title, prune it out safely
+  if (parts[0].startsWith('#')) {
+    parts[0] = parts[0].replace(/^#.*?\n/, '').trim();
   }
   return parts;
 };
 
-const parseListItems = (lines: string[], startIndex: number) => {
-  const items: string[] = [];
-  for (let i = startIndex; i < lines.length; i++) {
-    const l = lines[i];
-    if (/^\s*-\s+/.test(l)) {
-      // top-level key (stop)
-      break;
-    }
-    const m = l.match(/^\s*-\s+(.*)$/);
-    if (m) items.push(m[1].trim());
-    else {
-      const m2 = l.match(/^\s*[-*]\s+(.*)$/);
-      if (m2) items.push(m2[1].trim());
-    }
-  }
-  return items;
-};
-
 const parseExperienceText = (text: string): Experience[] => {
-  const sections = splitSections(text);
+  // Safe extraction for standard ## headers or raw file text
+  const sections = text.includes('## ') ? splitSections(text) : [text.trim()];
   const results: Experience[] = [];
 
   sections.forEach(sec => {
-    const lines = sec.split('\n').map(l => l.replace(/\r/g, ''));
-    const title = lines[0].trim(); // role/title
-    const item: Experience = { role: title, responsibilities: [], achievements: [] } as Experience;
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      const kv = line.match(/^[-]\s*([^:]+):\s*(.*)$/);
+    const lines = sec.split('\n').map(l => l.trim()).filter(Boolean);
+    if (!lines.length) return;
+
+    const role = lines[0].replace(/^##\s+/, '').trim();
+    if (role.toLowerCase().startsWith('experience')) return; // Skip title headers
+
+    const item: Experience = { role, responsibilities: [], achievements: [] };
+    let currentTrackingList: 'resp' | 'ach' | null = null;
+
+    lines.slice(1).forEach(line => {
+      const kv = line.match(/^[-*]\s*([^:]+):\s*(.*)$/);
       if (kv) {
+        currentTrackingList = null; // Reset block context
         const key = kv[1].trim().toLowerCase();
         const val = kv[2].trim();
+        
         if (key === 'company') item.company = val;
         else if (key === 'period') item.period = val;
         else if (key === 'location') item.location = val;
-        else if (key === 'description') item.responsibilities.push(val);
-        else if (key === 'responsibilities') {
-          // collect following indented list
-          const nested: string[] = [];
-          for (let j = i + 1; j < lines.length; j++) {
-            const nl = lines[j];
-            // stop when encountering another top-level key like '- tools:' or '- description:'
-            if (/^\s*-\s*[^:]+:\s*/.test(nl)) break;
-            const m = nl.match(/^\s*-\s+(.*)$/);
-            if (m) nested.push(m[1].trim());
-            else {
-              const mm = nl.match(/^\s{2,}-\s+(.*)$/);
-              if (mm) nested.push(mm[1].trim());
-              else {
-                // not a nested list item
-                break;
-              }
-            }
-          }
-          if (nested.length) item.responsibilities.push(...nested);
-        } else if (key === 'achievements') {
-          const nested: string[] = [];
-          for (let j = i + 1; j < lines.length; j++) {
-            const nl = lines[j];
-            if (/^\s*-\s*[^:]+:\s*/.test(nl)) break;
-            const m = nl.match(/^\s*-\s+(.*)$/);
-            if (m) nested.push(m[1].trim());
-            else {
-              const mm = nl.match(/^\s{2,}-\s+(.*)$/);
-              if (mm) nested.push(mm[1].trim());
-              else break;
-            }
-          }
-          if (nested.length) item.achievements = nested;
+      } else if (line.toLowerCase().startsWith('- responsibilities:') || line.toLowerCase().startsWith('- responsibility:')) {
+        currentTrackingList = 'resp';
+      } else if (line.toLowerCase().startsWith('- achievements:') || line.toLowerCase().startsWith('- achievement:')) {
+        currentTrackingList = 'ach';
+      } else {
+        const bulletMatch = line.match(/^[-*+]\s+(.*)$/) || line.match(/^\s+[-*+]\s+(.*)$/);
+        if (bulletMatch) {
+          const content = bulletMatch[1].trim();
+          if (currentTrackingList === 'resp') item.responsibilities.push(content);
+          if (currentTrackingList === 'ach') item.achievements?.push(content);
         }
       }
+    });
+
+    if (item.company || item.responsibilities.length) {
+      results.push(item);
     }
-    results.push(item);
   });
 
   return results;
@@ -127,46 +93,46 @@ const parseProjectsText = (text: string): Project[] => {
   const results: Project[] = [];
 
   sections.forEach(sec => {
-    const lines = sec.split('\n').map(l => l.replace(/\r/g, ''));
-    const title = lines[0].trim();
-    const proj: Project = { id: title.toLowerCase().replace(/[^a-z0-9]+/g, '-'), title, description: '', tools: [], results: [], date: '' };
+    const lines = sec.split('\n').map(l => l.trim()).filter(Boolean);
+    if (!lines.length) return;
 
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      const kv = line.match(/^[-]\s*([^:]+):\s*(.*)$/);
+    const title = lines[0].replace(/^##\s+/, '').trim();
+    if (title.toLowerCase().startsWith('projects')) return;
+
+    const proj: Project = { 
+      id: title.toLowerCase().replace(/[^a-z0-9]+/g, '-'), 
+      title, 
+      description: '', 
+      tools: [], 
+      results: [] ,
+      date: ''
+    };
+    
+    let currentTrackingList: 'tools' | 'results' | null = null;
+
+    lines.slice(1).forEach(line => {
+      const kv = line.match(/^[-*]\s*([^:]+):\s*(.*)$/);
       if (kv) {
+        currentTrackingList = null;
         const key = kv[1].trim().toLowerCase();
         const val = kv[2].trim();
+        
         if (key === 'date') proj.date = val;
         else if (key === 'description') proj.description = val;
-        else if (key === 'tools') {
-          // collect following indented tools
-          const tools: string[] = [];
-          for (let j = i + 1; j < lines.length; j++) {
-            const nl = lines[j];
-            if (/^\s*-\s+/.test(nl)) break;
-            const m = nl.match(/^\s*-\s+(.*)$/);
-            if (m) tools.push(m[1].trim());
-          }
-          proj.tools = tools;
-        } else if (key === 'results') {
-          const res: string[] = [];
-          for (let j = i + 1; j < lines.length; j++) {
-            const nl = lines[j];
-            if (/^\s*-\s*[^:]+:\s*/.test(nl)) break;
-            const m = nl.match(/^\s*-\s+(.*)$/);
-            if (m) res.push(m[1].trim());
-            else {
-              const mm = nl.match(/^\s{2,}-\s+(.*)$/);
-              if (mm) res.push(mm[1].trim());
-              else break;
-            }
-          }
-          proj.results = res;
+        else if (key === 'url' || key === 'githuburl') proj.githubUrl = val;
+      } else if (line.toLowerCase().startsWith('- tools:')) {
+        currentTrackingList = 'tools';
+      } else if (line.toLowerCase().startsWith('- results:')) {
+        currentTrackingList = 'results';
+      } else {
+        const bulletMatch = line.match(/^[-*+]\s+(.*)$/) || line.match(/^\s+[-*+]\s+(.*)$/);
+        if (bulletMatch) {
+          const content = bulletMatch[1].trim();
+          if (currentTrackingList === 'tools') proj.tools.push(content);
+          if (currentTrackingList === 'results') proj.results.push(content);
         }
       }
-    }
+    });
 
     results.push(proj);
   });
@@ -179,18 +145,26 @@ const parseSkillsText = (text: string): Skill[] => {
   const skills: Skill[] = [];
 
   sections.forEach(sec => {
-    const lines = sec.split('\n').map(l => l.replace(/\r/g, ''));
-    const category = lines[0].trim();
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      const kv = line.match(/^[-]\s*([^:]+):\s*(\d+)$/);
-      if (kv) {
-        const name = kv[1].trim();
-        const prof = parseInt(kv[2], 10) || 0;
-        skills.push({ id: (category + '-' + name).toLowerCase().replace(/[^a-z0-9]+/g, '-'), name, category, proficiency: prof });
+    const lines = sec.split('\n').map(l => l.trim()).filter(Boolean);
+    if (!lines.length) return;
+
+    const category = lines[0].replace(/^##\s+/, '').trim();
+    if (category.toLowerCase().startsWith('skills')) return;
+
+    lines.slice(1).forEach(line => {
+      // Fallback parser checking for either "- Python: 5" OR "- name: Python" layouts
+      const simpleKv = line.match(/^[-*]\s*([^:]+):\s*(\d+)$/);
+      if (simpleKv) {
+        const name = simpleKv[1].trim();
+        const prof = parseInt(simpleKv[2], 10) || 4;
+        skills.push({ 
+          id: (category + '-' + name).toLowerCase().replace(/[^a-z0-9]+/g, '-'), 
+          name, 
+          category, 
+          proficiency: prof 
+        });
       }
-    }
+    });
   });
 
   return skills;
@@ -199,143 +173,101 @@ const parseSkillsText = (text: string): Skill[] => {
 const parseStatusText = (text: string): WorkStatus => {
   const m = text.match(/status:\s*(.*)/i);
   if (!m) return 'Currently Employed';
-  const raw = m[1].trim();
-  if (/open/i.test(raw)) return 'Open to Work';
-  return 'Currently Employed';
+  return /open/i.test(m[1].trim()) ? 'Open to Work' : 'Currently Employed';
 };
 
-// --- Hooks that load and parse markdown files using Vite's import.meta.glob ---
-export const useProjects = (): { projects: Project[]; loading: boolean } => {
+// --- Standardized React Pipeline Hooks utilizing Vite Glob Importers ---
+export const useProjects = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let mounted = true;
     const load = async () => {
       try {
-        // @ts-ignore - Vite import
-        const modules = import.meta.glob('../content/*.md', { as: 'raw' }) as Record<string, () => Promise<string>>;
-        const entries = Object.entries(modules);
-        for (const [path, loader] of entries) {
-          if (path.endsWith('projects.md')) {
-            const txt = await loader();
-            const parsed = parseProjectsText(txt);
-            if (mounted) setProjects(parsed.length ? parsed : []);
-            break;
-          }
+        const modules = import.meta.glob('../content/projects.md', { query: '?raw', import: 'default' });
+        for (const loader of Object.values(modules)) {
+          const txt = await loader() as string;
+          setProjects(parseProjectsText(txt));
         }
       } catch (e) {
-        // swallow and keep empty
+        console.error("Failed to parse projects:", e);
       } finally {
-        if (mounted) setLoading(false);
+        setLoading(false);
       }
     };
     load();
-    return () => {
-      mounted = false;
-    };
   }, []);
 
   return { projects, loading };
 };
 
-export const useExperience = (): { experience: Experience[]; loading: boolean } => {
+export const useExperience = () => {
   const [experience, setExperience] = useState<Experience[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let mounted = true;
     const load = async () => {
       try {
-        // @ts-ignore
-        const modules = import.meta.glob('../content/*.md', { as: 'raw' }) as Record<string, () => Promise<string>>;
-        const entries = Object.entries(modules);
-        for (const [path, loader] of entries) {
-          if (path.endsWith('experience.md')) {
-            const txt = await loader();
-            const parsed = parseExperienceText(txt);
-            if (mounted) setExperience(parsed.length ? parsed : []);
-            break;
-          }
+        const modules = import.meta.glob('../content/experience.md', { query: '?raw', import: 'default' });
+        for (const loader of Object.values(modules)) {
+          const txt = await loader() as string;
+          setExperience(parseExperienceText(txt));
         }
       } catch (e) {
-        // ignore
+        console.error("Failed to parse experience:", e);
       } finally {
-        if (mounted) setLoading(false);
+        setLoading(false);
       }
     };
     load();
-    return () => {
-      mounted = false;
-    };
   }, []);
 
   return { experience, loading };
 };
 
-export const useSkills = (): { skills: Skill[]; loading: boolean } => {
+export const useSkills = () => {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let mounted = true;
     const load = async () => {
       try {
-        // @ts-ignore
-        const modules = import.meta.glob('../content/*.md', { as: 'raw' }) as Record<string, () => Promise<string>>;
-        const entries = Object.entries(modules);
-        for (const [path, loader] of entries) {
-          if (path.endsWith('skills.md')) {
-            const txt = await loader();
-            const parsed = parseSkillsText(txt);
-            if (mounted) setSkills(parsed.length ? parsed : []);
-            break;
-          }
+        const modules = import.meta.glob('../content/skills.md', { query: '?raw', import: 'default' });
+        for (const loader of Object.values(modules)) {
+          const txt = await loader() as string;
+          setSkills(parseSkillsText(txt));
         }
       } catch (e) {
-        // ignore
+        console.error("Failed to parse skills:", e);
       } finally {
-        if (mounted) setLoading(false);
+        setLoading(false);
       }
     };
     load();
-    return () => {
-      mounted = false;
-    };
   }, []);
 
   return { skills, loading };
 };
 
-export const useWorkStatus = (): { status: WorkStatus; loading: boolean } => {
+export const useWorkStatus = () => {
   const [status, setStatus] = useState<WorkStatus>('Currently Employed');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let mounted = true;
     const load = async () => {
       try {
-        // @ts-ignore
-        const modules = import.meta.glob('../content/*.md', { as: 'raw' }) as Record<string, () => Promise<string>>;
-        const entries = Object.entries(modules);
-        for (const [path, loader] of entries) {
-          if (path.endsWith('status.md')) {
-            const txt = await loader();
-            const parsed = parseStatusText(txt);
-            if (mounted) setStatus(parsed);
-            break;
-          }
+        const modules = import.meta.glob('../content/status.md', { query: '?raw', import: 'default' });
+        for (const loader of Object.values(modules)) {
+          const txt = await loader() as string;
+          setStatus(parseStatusText(txt));
         }
       } catch (e) {
-        // ignore
+        console.error("Failed to parse status:", e);
       } finally {
-        if (mounted) setLoading(false);
+        setLoading(false);
       }
     };
     load();
-    return () => {
-      mounted = false;
-    };
   }, []);
 
   return { status, loading };
