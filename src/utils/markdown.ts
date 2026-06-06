@@ -15,9 +15,9 @@ export interface Project {
 export interface Experience {
   id?: string;
   role: string;
-  company: string;
-  period: string;
-  location: string;
+  company?: string;
+  period?: string;
+  location?: string;
   responsibilities: string[];
   achievements?: string[];
 }
@@ -31,136 +31,304 @@ export interface Skill {
 
 export type WorkStatus = 'Open to Work' | 'Currently Employed';
 
-// Mock data for projects
-export const useProjects = (): { projects: Project[], loading: boolean } => {
+// --- Simple markdown parsers tailored to the repo's content format ---
+const splitSections = (text: string) => {
+  // Split on '## ' headings, ignore the first chunk (the file-level title)
+  const parts = text.split(/\n##\s+/).map(p => p.trim()).filter(Boolean);
+  if (parts.length === 0) return [];
+  // first part may contain the file title; drop it when it starts with '#'
+  if (parts[0].startsWith('#') || parts[0].toLowerCase().startsWith('projects') || parts[0].toLowerCase().startsWith('experience') || parts[0].toLowerCase().startsWith('skills')) {
+    return parts.slice(1);
+  }
+  return parts;
+};
+
+const parseListItems = (lines: string[], startIndex: number) => {
+  const items: string[] = [];
+  for (let i = startIndex; i < lines.length; i++) {
+    const l = lines[i];
+    if (/^\s*-\s+/.test(l)) {
+      // top-level key (stop)
+      break;
+    }
+    const m = l.match(/^\s*-\s+(.*)$/);
+    if (m) items.push(m[1].trim());
+    else {
+      const m2 = l.match(/^\s*[-*]\s+(.*)$/);
+      if (m2) items.push(m2[1].trim());
+    }
+  }
+  return items;
+};
+
+const parseExperienceText = (text: string): Experience[] => {
+  const sections = splitSections(text);
+  const results: Experience[] = [];
+
+  sections.forEach(sec => {
+    const lines = sec.split('\n').map(l => l.replace(/\r/g, ''));
+    const title = lines[0].trim(); // role/title
+    const item: Experience = { role: title, responsibilities: [], achievements: [] } as Experience;
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      const kv = line.match(/^[-]\s*([^:]+):\s*(.*)$/);
+      if (kv) {
+        const key = kv[1].trim().toLowerCase();
+        const val = kv[2].trim();
+        if (key === 'company') item.company = val;
+        else if (key === 'period') item.period = val;
+        else if (key === 'location') item.location = val;
+        else if (key === 'description') item.responsibilities.push(val);
+        else if (key === 'responsibilities') {
+          // collect following indented list
+          const nested: string[] = [];
+          for (let j = i + 1; j < lines.length; j++) {
+            const nl = lines[j];
+            if (/^\s*-\s+/.test(nl)) break;
+            const m = nl.match(/^\s+-\s+(.*)$/);
+            if (m) nested.push(m[1].trim());
+            else if (/^\s{2,}\-\s+/.test(nl)) {
+              const mm = nl.match(/^\s{2,}\-\s+(.*)$/);
+              if (mm) nested.push(mm[1].trim());
+            } else if (/^\s{2,}/.test(nl)) {
+              // lines starting with two spaces may be list items
+              const mm = nl.replace(/^\s+/, '');
+              if (mm.startsWith('- ')) nested.push(mm.replace(/^-\s+/, '').trim());
+            } else {
+              // not nested
+              break;
+            }
+          }
+          if (nested.length) item.responsibilities.push(...nested);
+        } else if (key === 'achievements') {
+          const nested: string[] = [];
+          for (let j = i + 1; j < lines.length; j++) {
+            const nl = lines[j];
+            if (/^\s*-\s+/.test(nl)) break;
+            const m = nl.match(/^\s+-\s+(.*)$/);
+            if (m) nested.push(m[1].trim());
+            else break;
+          }
+          if (nested.length) item.achievements = nested;
+        }
+      }
+    }
+    results.push(item);
+  });
+
+  return results;
+};
+
+const parseProjectsText = (text: string): Project[] => {
+  const sections = splitSections(text);
+  const results: Project[] = [];
+
+  sections.forEach(sec => {
+    const lines = sec.split('\n').map(l => l.replace(/\r/g, ''));
+    const title = lines[0].trim();
+    const proj: Project = { id: title.toLowerCase().replace(/[^a-z0-9]+/g, '-'), title, description: '', tools: [], results: [], date: '' };
+
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      const kv = line.match(/^[-]\s*([^:]+):\s*(.*)$/);
+      if (kv) {
+        const key = kv[1].trim().toLowerCase();
+        const val = kv[2].trim();
+        if (key === 'date') proj.date = val;
+        else if (key === 'description') proj.description = val;
+        else if (key === 'tools') {
+          // collect following indented tools
+          const tools: string[] = [];
+          for (let j = i + 1; j < lines.length; j++) {
+            const nl = lines[j];
+            if (/^\s*-\s+/.test(nl)) break;
+            const m = nl.match(/^\s*-\s+(.*)$/);
+            if (m) tools.push(m[1].trim());
+          }
+          proj.tools = tools;
+        } else if (key === 'results') {
+          const res: string[] = [];
+          for (let j = i + 1; j < lines.length; j++) {
+            const nl = lines[j];
+            if (/^\s*-\s+/.test(nl)) break;
+            const m = nl.match(/^\s*-\s+(.*)$/);
+            if (m) res.push(m[1].trim());
+          }
+          proj.results = res;
+        }
+      }
+    }
+
+    results.push(proj);
+  });
+
+  return results;
+};
+
+const parseSkillsText = (text: string): Skill[] => {
+  const sections = splitSections(text);
+  const skills: Skill[] = [];
+
+  sections.forEach(sec => {
+    const lines = sec.split('\n').map(l => l.replace(/\r/g, ''));
+    const category = lines[0].trim();
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      const kv = line.match(/^[-]\s*([^:]+):\s*(\d+)$/);
+      if (kv) {
+        const name = kv[1].trim();
+        const prof = parseInt(kv[2], 10) || 0;
+        skills.push({ id: (category + '-' + name).toLowerCase().replace(/[^a-z0-9]+/g, '-'), name, category, proficiency: prof });
+      }
+    }
+  });
+
+  return skills;
+};
+
+const parseStatusText = (text: string): WorkStatus => {
+  const m = text.match(/status:\s*(.*)/i);
+  if (!m) return 'Currently Employed';
+  const raw = m[1].trim();
+  if (/open/i.test(raw)) return 'Open to Work';
+  return 'Currently Employed';
+};
+
+// --- Hooks that load and parse markdown files using Vite's import.meta.glob ---
+export const useProjects = (): { projects: Project[]; loading: boolean } => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Simulate loading from markdown files
-    setTimeout(() => {
-      setProjects([
-        {
-          id: 'project-1',
-          title: 'Enterprise Data Pipeline Optimization',
-          description: 'Redesigned ETL processes to improve data processing efficiency and reduce operational costs.',
-          tools: ['Apache Spark', 'Airflow', 'AWS Glue', 'Python'],
-          results: [
-            'Reduced processing time by 65%',
-            'Decreased cloud infrastructure costs by 40%',
-            'Improved data accuracy by implementing robust validation'
-          ],
-          date: '2023',
-          githubUrl: 'https://github.com/AkumaBlazeX?tab=repositories',
-          liveUrl: 'https://github.com/AkumaBlazeX?tab=repositories'
-        },
-        {
-          id: 'project-2',
-          title: 'Real-time Analytics Dashboard',
-          description: 'Developed a comprehensive real-time analytics solution for monitoring business KPIs and customer behavior.',
-          tools: ['Kafka', 'Elasticsearch', 'Kibana', 'React'],
-          results: [
-            'Enabled real-time decision making',
-            'Consolidated 7 legacy reporting systems',
-            'Reduced time-to-insight from days to minutes'
-          ],
-          date: '2022',
-          githubUrl: 'https://github.com/AkumaBlazeX?tab=repositories',
-          liveUrl: 'https://github.com/AkumaBlazeX?tab=repositories'
-        },
-        {
-          id: 'project-3',
-          title: 'Data Quality Framework Implementation',
-          description: 'Created an automated data quality monitoring system to ensure consistent data integrity across the organization.',
-          tools: ['Python', 'dbt', 'Great Expectations', 'Snowflake'],
-          results: [
-            'Automated 95% of data quality checks',
-            'Identified and remediated critical data inconsistencies',
-            'Established company-wide data quality standards'
-          ],
-          date: '2021',
-          githubUrl: 'https://github.com/AkumaBlazeX?tab=repositories',
-          liveUrl: 'https://github.com/AkumaBlazeX?tab=repositories'
+    let mounted = true;
+    const load = async () => {
+      try {
+        // @ts-ignore - Vite import
+        const modules = import.meta.glob('../content/*.md', { as: 'raw' }) as Record<string, () => Promise<string>>;
+        const entries = Object.entries(modules);
+        for (const [path, loader] of entries) {
+          if (path.endsWith('projects.md')) {
+            const txt = await loader();
+            const parsed = parseProjectsText(txt);
+            if (mounted) setProjects(parsed.length ? parsed : []);
+            break;
+          }
         }
-      ]);
-      setLoading(false);
-    }, 800);
+      } catch (e) {
+        // swallow and keep empty
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+    load();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   return { projects, loading };
 };
 
-// Experience data
-export const useExperience = (): { experience: Experience[], loading: boolean } => {
+export const useExperience = (): { experience: Experience[]; loading: boolean } => {
   const [experience, setExperience] = useState<Experience[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Simulate loading from markdown files
-    setTimeout(() => {
-      setExperience([
-        {
-          id: 'exp-1',
-          role: 'Data Analyst',
-          company: 'Omnicom Media Services',
-          period: '2024 - Present',
-          location: 'Bangalore, Karnataka, India',
-          responsibilities: [
-            'Built Altryex workflows to transform the ad-genrated data into the needed way',
-            'Using tableau for genral and direct reporting',
-            'Direct engagment with clients discussing about the Ad- Data descripencies and much more',
-            'Made Automation about 30% of the recurring work'
-          ],
-          achievements: []
+    let mounted = true;
+    const load = async () => {
+      try {
+        // @ts-ignore
+        const modules = import.meta.glob('../content/*.md', { as: 'raw' }) as Record<string, () => Promise<string>>;
+        const entries = Object.entries(modules);
+        for (const [path, loader] of entries) {
+          if (path.endsWith('experience.md')) {
+            const txt = await loader();
+            const parsed = parseExperienceText(txt);
+            if (mounted) setExperience(parsed.length ? parsed : []);
+            break;
+          }
         }
-      ]);
-      setLoading(false);
-    }, 800);
+      } catch (e) {
+        // ignore
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+    load();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   return { experience, loading };
 };
 
-// Mock data for skills
-export const useSkills = (): { skills: Skill[], loading: boolean } => {
+export const useSkills = (): { skills: Skill[]; loading: boolean } => {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Simulate loading from markdown files
-    setTimeout(() => {
-      setSkills([
-        { id: 'skill-1', name: 'Python', category: 'Programming', proficiency: 5 },
-        { id: 'skill-2', name: 'SQL', category: 'Data', proficiency: 5 },
-        { id: 'skill-3', name: 'Apache Spark', category: 'Big Data', proficiency: 4 },
-        { id: 'skill-4', name: 'AWS', category: 'Cloud', proficiency: 4 },
-        { id: 'skill-5', name: 'Airflow', category: 'Orchestration', proficiency: 5 },
-        { id: 'skill-6', name: 'Kafka', category: 'Streaming', proficiency: 3 },
-        { id: 'skill-7', name: 'dbt', category: 'Data Transformation', proficiency: 4 },
-        { id: 'skill-8', name: 'Docker', category: 'Containerization', proficiency: 4 },
-        { id: 'skill-9', name: 'Kubernetes', category: 'Orchestration', proficiency: 3 },
-        { id: 'skill-10', name: 'Snowflake', category: 'Data Warehouse', proficiency: 4 },
-        { id: 'skill-11', name: 'Terraform', category: 'Infrastructure as Code', proficiency: 3 },
-        { id: 'skill-12', name: 'Git', category: 'Version Control', proficiency: 5 }
-      ]);
-      setLoading(false);
-    }, 800);
+    let mounted = true;
+    const load = async () => {
+      try {
+        // @ts-ignore
+        const modules = import.meta.glob('../content/*.md', { as: 'raw' }) as Record<string, () => Promise<string>>;
+        const entries = Object.entries(modules);
+        for (const [path, loader] of entries) {
+          if (path.endsWith('skills.md')) {
+            const txt = await loader();
+            const parsed = parseSkillsText(txt);
+            if (mounted) setSkills(parsed.length ? parsed : []);
+            break;
+          }
+        }
+      } catch (e) {
+        // ignore
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+    load();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   return { skills, loading };
 };
 
-// Work status data
-export const useWorkStatus = (): { status: WorkStatus, loading: boolean } => {
+export const useWorkStatus = (): { status: WorkStatus; loading: boolean } => {
   const [status, setStatus] = useState<WorkStatus>('Currently Employed');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Simulate loading from status.md file
-    setTimeout(() => {
-      setStatus('Currently Employed');
-      setLoading(false);
-    }, 500);
+    let mounted = true;
+    const load = async () => {
+      try {
+        // @ts-ignore
+        const modules = import.meta.glob('../content/*.md', { as: 'raw' }) as Record<string, () => Promise<string>>;
+        const entries = Object.entries(modules);
+        for (const [path, loader] of entries) {
+          if (path.endsWith('status.md')) {
+            const txt = await loader();
+            const parsed = parseStatusText(txt);
+            if (mounted) setStatus(parsed);
+            break;
+          }
+        }
+      } catch (e) {
+        // ignore
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+    load();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   return { status, loading };
