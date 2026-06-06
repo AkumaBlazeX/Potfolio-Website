@@ -48,7 +48,7 @@ const Projects = () => {
               Contact Me
             </Link>
             <a 
-              href="https://www.sanathblogs.site/" 
+              href="https://www.sanathblogs.online/" 
               target="_blank" 
               rel="noopener noreferrer" 
               className="secondary-button inline-flex items-center"

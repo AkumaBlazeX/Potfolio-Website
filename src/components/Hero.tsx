@@ -42,7 +42,7 @@ const Hero = () => {
           
           <div className="pt-4 animate-fade-in" style={{ animationDelay: '600ms' }}>
             <a 
-              href="https://www.sanathblogs.site/" 
+              href="https://www.sanathblogs.online/" 
               target="_blank" 
               rel="noopener noreferrer"
               className="text-sm text-primary hover:text-primary/80 flex items-center justify-center gap-1.5 transition-colors"

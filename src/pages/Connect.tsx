@@ -315,7 +315,7 @@ const Connect = () => {
         
         <div className="mt-16 text-center">
           <a 
-            href="https://www.sanathblogs.site/"
+            href="https://www.sanathblogs.online/"
             target="_blank"
             rel="noopener noreferrer" 
             className="cta-button inline-flex items-center"
