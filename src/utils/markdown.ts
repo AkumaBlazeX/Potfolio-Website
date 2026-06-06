@@ -30,11 +30,9 @@ export interface Skill {
 
 export type WorkStatus = 'Open to Work' | 'Currently Employed';
 
-// Unified section splitter that is immune to missing top-level newlines
 const splitSections = (text: string) => {
-  const parts = text.split(/\n##\s+|###\s+/).map(p => p.trim()).filter(Boolean);
+  const parts = text.split(/\n##\s+/).map(p => p.trim()).filter(Boolean);
   if (parts.length === 0) return [];
-  // If the first section contains the main H1 file title, prune it out safely
   if (parts[0].startsWith('#')) {
     parts[0] = parts[0].replace(/^#.*?\n/, '').trim();
   }
@@ -42,43 +40,57 @@ const splitSections = (text: string) => {
 };
 
 const parseExperienceText = (text: string): Experience[] => {
-  // Safe extraction for standard ## headers or raw file text
-  const sections = text.includes('## ') ? splitSections(text) : [text.trim()];
+  const sections = splitSections(text);
   const results: Experience[] = [];
 
   sections.forEach(sec => {
-    const lines = sec.split('\n').map(l => l.trim()).filter(Boolean);
+    const lines = sec.split('\n').map(l => l.replace(/\r/g, ''));
     if (!lines.length) return;
 
     const role = lines[0].replace(/^##\s+/, '').trim();
-    if (role.toLowerCase().startsWith('experience')) return; // Skip title headers
+    if (role.toLowerCase().startsWith('experience')) return;
 
     const item: Experience = { role, responsibilities: [], achievements: [] };
-    let currentTrackingList: 'resp' | 'ach' | null = null;
+    let activeMode: 'resp' | 'ach' | null = null;
 
-    lines.slice(1).forEach(line => {
-      const kv = line.match(/^[-*]\s*([^:]+):\s*(.*)$/);
-      if (kv) {
-        currentTrackingList = null; // Reset block context
+    for (let i = 1; i < lines.length; i++) {
+      const origLine = lines[i];
+      const trimmed = origLine.trim();
+      if (!trimmed) continue;
+
+      // Detect Section Changes
+      if (trimmed.toLowerCase().includes('responsibilities:')) {
+        activeMode = 'resp';
+        continue;
+      }
+      if (trimmed.toLowerCase().includes('achievements:')) {
+        activeMode = 'ach';
+        continue;
+      }
+
+      // Check for structural metadata keys
+      const kv = trimmed.match(/^[-*]?\s*([^:]+):\s*(.*)$/);
+      if (kv && !origLine.startsWith(' ') && !origLine.startsWith('\t') && !['company', 'period', 'location'].includes(kv[1].trim().toLowerCase())) {
+        // If it looks like a key but isn't metadata, don't clear mode yet
+      } else if (kv && !origLine.startsWith(' ') && !origLine.startsWith('\t')) {
         const key = kv[1].trim().toLowerCase();
         const val = kv[2].trim();
-        
         if (key === 'company') item.company = val;
         else if (key === 'period') item.period = val;
         else if (key === 'location') item.location = val;
-      } else if (line.toLowerCase().startsWith('- responsibilities:') || line.toLowerCase().startsWith('- responsibility:')) {
-        currentTrackingList = 'resp';
-      } else if (line.toLowerCase().startsWith('- achievements:') || line.toLowerCase().startsWith('- achievement:')) {
-        currentTrackingList = 'ach';
-      } else {
-        const bulletMatch = line.match(/^[-*+]\s+(.*)$/) || line.match(/^\s+[-*+]\s+(.*)$/);
-        if (bulletMatch) {
-          const content = bulletMatch[1].trim();
-          if (currentTrackingList === 'resp') item.responsibilities.push(content);
-          if (currentTrackingList === 'ach') item.achievements?.push(content);
-        }
+        activeMode = null;
+        continue;
       }
-    });
+
+      // Capture list items based on current active collection mode
+      const bulletMatch = trimmed.match(/^[-*+]\s+(.*)$/) || [null, trimmed];
+      const content = bulletMatch[1]?.trim();
+      
+      if (content) {
+        if (activeMode === 'resp') item.responsibilities.push(content);
+        if (activeMode === 'ach') item.achievements?.push(content);
+      }
+    }
 
     if (item.company || item.responsibilities.length) {
       results.push(item);
@@ -93,7 +105,7 @@ const parseProjectsText = (text: string): Project[] => {
   const results: Project[] = [];
 
   sections.forEach(sec => {
-    const lines = sec.split('\n').map(l => l.trim()).filter(Boolean);
+    const lines = sec.split('\n').map(l => l.replace(/\r/g, ''));
     if (!lines.length) return;
 
     const title = lines[0].replace(/^##\s+/, '').trim();
@@ -104,35 +116,45 @@ const parseProjectsText = (text: string): Project[] => {
       title, 
       description: '', 
       tools: [], 
-      results: [] ,
-      date: ''
+      results: [], 
+      date: '' 
     };
     
-    let currentTrackingList: 'tools' | 'results' | null = null;
+    let activeMode: 'tools' | 'results' | null = null;
 
-    lines.slice(1).forEach(line => {
-      const kv = line.match(/^[-*]\s*([^:]+):\s*(.*)$/);
-      if (kv) {
-        currentTrackingList = null;
+    for (let i = 1; i < lines.length; i++) {
+      const origLine = lines[i];
+      const trimmed = origLine.trim();
+      if (!trimmed) continue;
+
+      if (trimmed.toLowerCase().includes('tools:')) {
+        activeMode = 'tools';
+        continue;
+      }
+      if (trimmed.toLowerCase().includes('results:')) {
+        activeMode = 'results';
+        continue;
+      }
+
+      const kv = trimmed.match(/^[-*]?\s*([^:]+):\s*(.*)$/);
+      if (kv && !origLine.startsWith(' ') && !origLine.startsWith('\t')) {
         const key = kv[1].trim().toLowerCase();
         const val = kv[2].trim();
-        
         if (key === 'date') proj.date = val;
         else if (key === 'description') proj.description = val;
         else if (key === 'url' || key === 'githuburl') proj.githubUrl = val;
-      } else if (line.toLowerCase().startsWith('- tools:')) {
-        currentTrackingList = 'tools';
-      } else if (line.toLowerCase().startsWith('- results:')) {
-        currentTrackingList = 'results';
-      } else {
-        const bulletMatch = line.match(/^[-*+]\s+(.*)$/) || line.match(/^\s+[-*+]\s+(.*)$/);
-        if (bulletMatch) {
-          const content = bulletMatch[1].trim();
-          if (currentTrackingList === 'tools') proj.tools.push(content);
-          if (currentTrackingList === 'results') proj.results.push(content);
-        }
+        activeMode = null;
+        continue;
       }
-    });
+
+      const bulletMatch = trimmed.match(/^[-*+]\s+(.*)$/) || [null, trimmed];
+      const content = bulletMatch[1]?.trim();
+
+      if (content) {
+        if (activeMode === 'tools') proj.tools.push(content);
+        if (activeMode === 'results') proj.results.push(content);
+      }
+    }
 
     results.push(proj);
   });
@@ -141,19 +163,18 @@ const parseProjectsText = (text: string): Project[] => {
 };
 
 const parseSkillsText = (text: string): Skill[] => {
-  const sections = splitSections(text);
+  const sections = text.split(/\n##\s+/).map(p => p.trim()).filter(Boolean);
   const skills: Skill[] = [];
 
   sections.forEach(sec => {
     const lines = sec.split('\n').map(l => l.trim()).filter(Boolean);
     if (!lines.length) return;
 
-    const category = lines[0].replace(/^##\s+/, '').trim();
+    const category = lines[0].replace(/^#+\s+/, '').trim();
     if (category.toLowerCase().startsWith('skills')) return;
 
     lines.slice(1).forEach(line => {
-      // Fallback parser checking for either "- Python: 5" OR "- name: Python" layouts
-      const simpleKv = line.match(/^[-*]\s*([^:]+):\s*(\d+)$/);
+      const simpleKv = line.match(/^[-*]?\s*([^:]+):\s*(\d+)$/);
       if (simpleKv) {
         const name = simpleKv[1].trim();
         const prof = parseInt(simpleKv[2], 10) || 4;
@@ -176,7 +197,6 @@ const parseStatusText = (text: string): WorkStatus => {
   return /open/i.test(m[1].trim()) ? 'Open to Work' : 'Currently Employed';
 };
 
-// --- Standardized React Pipeline Hooks utilizing Vite Glob Importers ---
 export const useProjects = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
