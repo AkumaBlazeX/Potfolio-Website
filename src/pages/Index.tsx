@@ -49,7 +49,7 @@ const Index = () => {
                 I'm a data professional passionate about building data pipelines, creating insightful visualizations, and automating complex processes.
                 {status && (
                   <div className="mt-4">
-                    <span className="status-badge available">
+                    <span className={`status-badge ${status === 'Open to Work' ? 'available' : 'working'}`}>
                       {status}
                     </span>
                   </div>

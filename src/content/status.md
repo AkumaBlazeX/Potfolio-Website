@@ -1,3 +1,3 @@
 
-status: Currently Employed
+status: Open to Work
 

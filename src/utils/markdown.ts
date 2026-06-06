@@ -28,7 +28,7 @@ export interface Skill {
   proficiency: number;
 }
 
-export type WorkStatus = 'Open to Work' | 'Currently Employed';
+export type WorkStatus = 'Open to Work' | 'Currently Employed' | 'Currently Not Available';
 
 const splitSections = (text: string) => {
   const parts = text.split(/\n##\s+/).map(p => p.trim()).filter(Boolean);
@@ -194,7 +194,12 @@ const parseSkillsText = (text: string): Skill[] => {
 const parseStatusText = (text: string): WorkStatus => {
   const m = text.match(/status:\s*(.*)/i);
   if (!m) return 'Currently Employed';
-  return /open/i.test(m[1].trim()) ? 'Open to Work' : 'Currently Employed';
+
+  const value = m[1].trim();
+  if (/open/i.test(value)) return 'Open to Work';
+  if (/not\s+available/i.test(value)) return 'Currently Not Available';
+
+  return 'Currently Employed';
 };
 
 export const useProjects = () => {
