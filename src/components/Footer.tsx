@@ -68,7 +68,7 @@ const Footer = () => {
               </li>
               <li>
                 <a 
-                  href="https://www.sanathblogs.site/" 
+                  href="https://www.sanathblogs.onlinr/" 
                   target="_blank" 
                   rel="noopener noreferrer"
                   className="text-muted-foreground hover:text-primary transition-colors text-sm"
