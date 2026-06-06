@@ -34,7 +34,10 @@ const splitSections = (text: string) => {
   const parts = text.split(/\n##\s+/).map(p => p.trim()).filter(Boolean);
   if (parts.length === 0) return [];
   if (parts[0].startsWith('#')) {
-    parts[0] = parts[0].replace(/^#.*?\n/, '').trim();
+    parts[0] = parts[0].replace(/^#.*?(\n|$)/, '').trim();
+    if (!parts[0]) {
+      parts.shift();
+    }
   }
   return parts;
 };
