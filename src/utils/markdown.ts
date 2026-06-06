@@ -85,19 +85,17 @@ const parseExperienceText = (text: string): Experience[] => {
           const nested: string[] = [];
           for (let j = i + 1; j < lines.length; j++) {
             const nl = lines[j];
-            if (/^\s*-\s+/.test(nl)) break;
-            const m = nl.match(/^\s+-\s+(.*)$/);
+            // stop when encountering another top-level key like '- tools:' or '- description:'
+            if (/^\s*-\s*[^:]+:\s*/.test(nl)) break;
+            const m = nl.match(/^\s*-\s+(.*)$/);
             if (m) nested.push(m[1].trim());
-            else if (/^\s{2,}\-\s+/.test(nl)) {
-              const mm = nl.match(/^\s{2,}\-\s+(.*)$/);
+            else {
+              const mm = nl.match(/^\s{2,}-\s+(.*)$/);
               if (mm) nested.push(mm[1].trim());
-            } else if (/^\s{2,}/.test(nl)) {
-              // lines starting with two spaces may be list items
-              const mm = nl.replace(/^\s+/, '');
-              if (mm.startsWith('- ')) nested.push(mm.replace(/^-\s+/, '').trim());
-            } else {
-              // not nested
-              break;
+              else {
+                // not a nested list item
+                break;
+              }
             }
           }
           if (nested.length) item.responsibilities.push(...nested);
@@ -105,10 +103,14 @@ const parseExperienceText = (text: string): Experience[] => {
           const nested: string[] = [];
           for (let j = i + 1; j < lines.length; j++) {
             const nl = lines[j];
-            if (/^\s*-\s+/.test(nl)) break;
-            const m = nl.match(/^\s+-\s+(.*)$/);
+            if (/^\s*-\s*[^:]+:\s*/.test(nl)) break;
+            const m = nl.match(/^\s*-\s+(.*)$/);
             if (m) nested.push(m[1].trim());
-            else break;
+            else {
+              const mm = nl.match(/^\s{2,}-\s+(.*)$/);
+              if (mm) nested.push(mm[1].trim());
+              else break;
+            }
           }
           if (nested.length) item.achievements = nested;
         }
@@ -152,9 +154,14 @@ const parseProjectsText = (text: string): Project[] => {
           const res: string[] = [];
           for (let j = i + 1; j < lines.length; j++) {
             const nl = lines[j];
-            if (/^\s*-\s+/.test(nl)) break;
+            if (/^\s*-\s*[^:]+:\s*/.test(nl)) break;
             const m = nl.match(/^\s*-\s+(.*)$/);
             if (m) res.push(m[1].trim());
+            else {
+              const mm = nl.match(/^\s{2,}-\s+(.*)$/);
+              if (mm) res.push(mm[1].trim());
+              else break;
+            }
           }
           proj.results = res;
         }
