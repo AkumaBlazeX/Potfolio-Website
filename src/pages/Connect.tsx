@@ -27,32 +27,31 @@ const Connect = () => {
     if (storedTime) setLastSubmissionTime(parseInt(storedTime));
   }, []);
   
-  const sendToGoogleSheet = async (data: { name: string; email: string; message: string }) => {
+  const sendToLambda = async (data: { name: string; email: string; message: string }) => {
     try {
-      // The URL for the Google Apps Script Web App that will handle the form submission
-      // You'll need to create this script and deploy it as a web app
-      const scriptURL = 'https://script.google.com/macros/s/AKfycbxpKgMaI0Y8dNHIeiCdu53LapvuIUR_mjpInknwonXI4AHoCt7D7iEA8GMFtQB2f3xb/exec';
-      
-      // Create a FormData object to send the data
-      const formData = new FormData();
-      formData.append('name', data.name);
-      formData.append('email', data.email);
-      formData.append('message', data.message);
-      formData.append('timestamp', new Date().toISOString());
-      formData.append('userAgent', navigator.userAgent);
-      formData.append('referrer', document.referrer || 'direct');
-      
-      // Send the data to the Google Sheet
-      const response = await fetch(scriptURL, {
+      const lambdaUrl = import.meta.env.VITE_LAMBDA_URL;
+      if (!lambdaUrl) {
+        console.error('Missing VITE_LAMBDA_URL environment variable. Cannot submit contact form.');
+        alert('Messaging service is not configured. Please try again later.');
+        return false;
+      }
+
+      const response = await fetch(lambdaUrl, {
         method: 'POST',
-        body: formData,
-        mode: 'no-cors' // This is necessary for the Google Apps Script web app
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
       });
-      
-      console.log('Data sent to Google Sheet');
+
+      if (!response.ok) {
+        console.error('Lambda submission failed with status:', response.status, response.statusText);
+        return false;
+      }
+
       return true;
     } catch (error) {
-      console.error('Error sending data to Google Sheet:', error);
+      console.error('Error sending data to lambda endpoint:', error);
       return false;
     }
   };
@@ -111,17 +110,16 @@ const Connect = () => {
     setIsSubmitting(true);
     
     try {
-      // Send the data to the Google Sheet
-      const sheetResult = await sendToGoogleSheet({
+      const submissionResult = await sendToLambda({
         name,
         email,
         message
       });
       
-      if (!sheetResult) {
+      if (!submissionResult) {
         toast({
           title: "Error sending message",
-          description: "Failed to save your message. Please try again later.",
+          description: "Failed to deliver your message. Please try again later.",
           variant: "destructive",
         });
         setIsSubmitting(false);
@@ -141,6 +139,7 @@ const Connect = () => {
       setEmail('');
       setMessage('');
 
+      alert('Message sent successfully!');
       toast({
         title: "Message sent successfully",
         description: "Thank you for reaching out. I'll get back to you soon!",
@@ -148,10 +147,10 @@ const Connect = () => {
 
       setTimeout(() => setIsSubmitted(false), 5000);
     } catch (error: any) {
-      console.error('Google Sheet submission failed:', error);
+      console.error('Lambda submission failed:', error);
       toast({
         title: "Error sending message",
-        description: "Failed to save your message. Please try again later.",
+        description: "Failed to deliver your message. Please try again later.",
         variant: "destructive",
       });
       setIsSubmitting(false);
