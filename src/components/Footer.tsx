@@ -10,7 +10,7 @@ const Footer = () => {
       <div className="container mx-auto px-6 py-12">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold">SanathDev</h3>
+            <h3 className="text-lg font-semibold">Sanath Kumar</h3>
             <p className="text-muted-foreground text-sm max-w-xs">
               Data engineering professional specializing in building efficient, scalable data pipelines and solutions.
             </p>
