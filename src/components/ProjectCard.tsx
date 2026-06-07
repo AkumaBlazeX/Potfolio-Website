@@ -10,7 +10,7 @@ interface ProjectCardProps {
 const ProjectCard = ({ project, index }: ProjectCardProps) => {
   return (
     <div 
-      className="glass-card rounded-2xl overflow-hidden transition-all duration-500 hover:shadow-md"
+      className="glass-card rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-1 hover:shadow-xl"
       style={{ animationDelay: `${index * 100}ms` }}
     >
       <div className="p-6 space-y-4">
