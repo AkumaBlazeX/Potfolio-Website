@@ -11,7 +11,7 @@ const Index = () => {
   const status: WorkStatus = 'Currently Employed';
   
   const [text] = useTypewriter({
-    words: ["Data Engineer", "Data Analyst", "Automation Engineer"],
+    words: ["Data Engineer", "Data Analyst", " AI Automation"],
     loop: true, 
     typeSpeed: 80,
     deleteSpeed: 50,
